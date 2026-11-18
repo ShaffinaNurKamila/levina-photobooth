@@ -1,0 +1,33 @@
+<?php
+require_once 'config.php';
+
+function generateRandomString($length = 64) {
+    $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-._~';
+    $randomString = '';
+    for ($i = 0; $i < $length; $i++) {
+        $index = rand(0, strlen($characters) - 1);
+        $randomString .= $characters[$index];
+    }
+    return $randomString;
+}
+
+function base64url_encode($data) {
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+$code_verifier = generateRandomString(128);
+$code_challenge = base64url_encode(hash('sha256', $code_verifier, true));
+
+$_SESSION['code_verifier'] = $code_verifier;
+
+$authUrl = "https://www.canva.com/api/oauth/authorize?" . http_build_query([
+    'code_challenge_method' => 'S256',
+    'response_type' => 'code',
+    'client_id' => CANVA_CLIENT_ID,
+    'redirect_uri' => CANVA_REDIRECT_URI,
+    'scope' => CANVA_SCOPES,
+    'code_challenge' => $code_challenge
+]);
+
+header('Location: ' . $authUrl);
+exit;

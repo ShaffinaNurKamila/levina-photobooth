@@ -1,0 +1,75 @@
+<?php
+session_start();
+header('Content-Type: application/json');
+
+// Menerima input JSON dari frontend
+$data = json_decode(file_get_contents('php://input'), true);
+
+if (!isset($_SESSION['access_token'])) {
+    echo json_encode(['success' => false, 'message' => 'Anda belum login ke Canva.']);
+    exit;
+}
+
+$access_token = $_SESSION['access_token'];
+
+if (isset($data['image'])) {
+    $img = $data['image'];
+    $img = str_replace('data:image/png;base64,', '', $img);
+    $img = str_replace(' ', '+', $img);
+
+    // Decode base64 menjadi file binary gambar
+    $imgData = base64_decode($img);
+
+    // Pastikan folder uploads ada (sebagai backup)
+    $dir = '../uploads/';
+    if (!file_exists($dir)) {
+        mkdir($dir, 0777, true);
+    }
+    $fileName = 'canva_photobooth_' . time() . '_' . uniqid() . '.png';
+    $filePath = $dir . $fileName;
+    file_put_contents($filePath, $imgData);
+
+    // ---------------------------------------------------------
+    // CANVA ASSET UPLOAD API 
+    // ---------------------------------------------------------
+
+    $ch = curl_init('https://api.canva.com/rest/v1/asset-uploads');
+
+    // Metadata wajib untuk API Canva (nama file di-encode base64)
+    $assetName = "Photobooth Strip " . date('Y-m-d H:i:s');
+    $metadata = json_encode(['name_base64' => base64_encode($assetName)]);
+
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $imgData); // Kirim binary secara langsung
+
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $access_token,
+        'Content-Type: application/octet-stream',
+        'Asset-Upload-Metadata: ' . $metadata
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURL_HTTP_CODE);
+    curl_close($ch);
+
+    // API Upload Canva mengembalikan 202 (Accepted) jika job berhasil dimulai
+    if ($httpCode === 202 || $httpCode === 200) {
+        $result = json_decode($response, true);
+        echo json_encode([
+            'success' => true,
+            'message' => 'Foto berhasil diunggah ke folder Unggahan Canva Anda.',
+            'jobId' => $result['job']['id'] ?? 'unknown',
+            'canva_response' => $result
+        ]);
+    } else {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Gagal mengunggah ke Canva. (HTTP ' . $httpCode . ')',
+            'canva_error' => $response
+        ]);
+    }
+} else {
+    echo json_encode(['success' => false, 'message' => 'Data gambar tidak diterima.']);
+}
+?>
